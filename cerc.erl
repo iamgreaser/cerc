@@ -135,7 +135,7 @@ parse_stat(L = [X|_]) when (X >= $A andalso X =< $Z)
 				[${|Tx1] ->
 					parse_block(skip_ws(Tx1));
 				_ ->
-					{Ex1, Lx1} = parse_expr(skip_ws(L2)),
+					{Ex1, Lx1} = parse_expr(skip_ws(L8)),
 					[$;|Lx2] = skip_ws(Lx1),
 					{{op, Ex1, term}, skip_ws(Lx2)}
 			end,
@@ -206,11 +206,23 @@ preced(ass) -> 13.
 %%%
 rotate_tree(term) -> term;
 rotate_tree({op, E, T}) ->
-	{op, rotate_tree(E), rotate_tree(T)};
+	{op, rotate_tree(E),
+		rotate_tree(T)};
 rotate_tree({op_if, E1, ET, EF, T}) ->
-	{op_if, rotate_tree(E1), rotate_tree(ET), rotate_tree(EF), rotate_tree(T)};
+	{op_if, rotate_tree(E1),
+		rotate_tree(ET),
+		rotate_tree(EF),
+		rotate_tree(T)};
+rotate_tree({op_for, EI, EC, EL, EB, T}) ->
+	{op_for, rotate_tree(EI),
+		rotate_tree(EC),
+		rotate_tree(EL),
+		rotate_tree(EB),
+		rotate_tree(T)};
 rotate_tree({op_while, E1, E2, T}) ->
-	{op_while, rotate_tree(E1), rotate_tree(E2), rotate_tree(T)};
+	{op_while, rotate_tree(E1),
+		rotate_tree(E2),
+		rotate_tree(T)};
 rotate_tree({unop, Mode, E}) ->
 	{unop, Mode, rotate_tree(E)};
 rotate_tree({binop_x, Mode, E1, E2}) ->
@@ -298,6 +310,17 @@ print_code_tok(term) ->
 print_code_tok({op, E, T}) ->
 	print_code_tok(E),
 	io:format(";~n"),
+	print_code_tok(T);
+print_code_tok({op_for, EI, EC, EL, EB, T}) ->
+	io:format("for ("),
+	print_code_tok(EI),
+	io:format("; "),
+	print_code_tok(EC),
+	io:format("; "),
+	print_code_tok(EL),
+	io:format(") {~n"),
+	print_code_tok(EB),
+	io:format("}~n"),
 	print_code_tok(T);
 print_code_tok({op_while, E1, E2, T}) ->
 	io:format("while "),
@@ -439,9 +462,24 @@ run_op_while(E1, E2, T, State) ->
 	end.
 
 %%%
+run_op_for(VR1, EC, EL, EB, T, State) ->
+	{V1, S1} = run_op(EC, State),
+	case {V1, T} of
+		{0, term} -> VR1;
+		{0, _} -> run_code(T, S1);
+		_ ->
+			{Vx1, Sx1} = run_code(EB, S1),
+			{_Vx2, Sx2} = run_op(EL, Sx1),
+			run_op_for(Vx1, EC, EL, EB, T, Sx2)
+	end.
+
+%%%
 run_code(term, State) -> {0, State};
 run_code({op_while, E1, E2, T}, State) ->
 	run_op_while(E1, E2, T, State);
+run_code({op_for, EI, EC, EL, EB, T}, State) ->
+	{V1, S1} = run_op(EI, State),
+	run_op_for(V1, EC, EL, EB, T, S1);
 run_code({op_if, E1, ET, EF, T}, State) ->
 	{V1, S1} = run_op(E1, State),
 	{V2, S2} = case V1 of
