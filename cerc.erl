@@ -192,6 +192,10 @@ parse_stat(L = [X|_]) when (X >= $A andalso X =< $Z)
 			{T, L3} = parse_stat(skip_ws(L2)),
 			{{op, E, T}, L3}
 	end;
+parse_stat([${|L]) ->
+	{E, L1} = parse_block(skip_ws(L)),
+	{T, L2} = parse_stat(skip_ws(L1)),
+	{{op_block, E, T}, L2};
 parse_stat(L) ->
 	{E, L1} = parse_expr(skip_ws(L)),
 	[$;|L2] = skip_ws(L1),
@@ -221,6 +225,9 @@ preced(ass) -> 13.
 rotate_tree(term) -> term;
 rotate_tree({op, E, T}) ->
 	{op, rotate_tree(E),
+		rotate_tree(T)};
+rotate_tree({op_block, E, T}) ->
+	{op_block, rotate_tree(E),
 		rotate_tree(T)};
 rotate_tree({op_if, E1, ET, EF, T}) ->
 	{op_if, rotate_tree(E1),
@@ -329,6 +336,11 @@ print_code_tok({unop, Mode, E}) ->
 	print_code_tok(E);
 print_code_tok(term) ->
 	ok;
+print_code_tok({op_block, E, T}) ->
+	io:format("{~n"),
+	print_code_tok(E),
+	io:format("}~n"),
+	print_code_tok(T);
 print_code_tok({op, E, T}) ->
 	print_code_tok(E),
 	io:format(";~n"),
@@ -534,6 +546,13 @@ run_code({op_if, E1, ET, EF, T}, State) ->
 		term -> {V2, S2};
 		_ -> run_code(T, S2)
 	end;
+run_code({op_block, E, T}, State) ->
+	{V1, S1} = run_code(E, State),
+	case T of
+		term -> {V1, S1};
+		_ -> run_code(T, S1)
+	end;
+
 run_code({op, E, term}, State) ->
 	run_op(E, State);
 run_code({op, E, T}, State) ->
