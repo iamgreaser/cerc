@@ -131,7 +131,7 @@ parse_stat(L = [X|_]) when (X >= $A andalso X =< $Z)
 			{EL, L6} = parse_expr(skip_ws(L5)),
 			[$)|L7] = skip_ws(L6),
 			L8 = skip_ws(L7),
-			{ET, L4} = case L8 of
+			{EB, L9} = case L8 of
 				[${|Tx1] ->
 					parse_block(skip_ws(Tx1));
 				_ ->
@@ -139,8 +139,8 @@ parse_stat(L = [X|_]) when (X >= $A andalso X =< $Z)
 					[$;|Lx2] = skip_ws(Lx1),
 					{{op, Ex1, term}, skip_ws(Lx2)}
 			end,
-			{T, L5} = parse_stat(skip_ws(L4)),
-			{{op_while, E1, ET, T}, L5};
+			{T, L10} = parse_stat(skip_ws(L9)),
+			{{op_for, EI, EC, EL, EB, T}, L10};
 		"if" ->
 			L1 = [$(|_] = skip_ws(LS),
 			{E1, L2} = parse_expr(L1),
