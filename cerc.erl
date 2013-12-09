@@ -61,6 +61,12 @@ parse_expr_sing(L=[X|_]) when (X >= $a andalso X =< $z)
 parse_expr_sing(L=[X|_]) when (X >= $0 andalso X =< $9) ->
 	{N, L1} = parse_number(L),
 	{{int, N}, skip_ws(L1)};
+parse_expr_sing([$+,$+|T]) ->
+	{E, L1} = parse_expr_sing(skip_ws(T)),
+	{{unop, preinc, E}, skip_ws(L1)};
+parse_expr_sing([$-,$-|T]) ->
+	{E, L1} = parse_expr_sing(skip_ws(T)),
+	{{unop, predec, E}, skip_ws(L1)};
 parse_expr_sing([$-|T]) ->
 	{E, L1} = parse_expr_sing(skip_ws(T)),
 	{{unop, neg, E}, skip_ws(L1)};
@@ -70,35 +76,43 @@ parse_expr_sing([$(|T]) ->
 	{{unop, grp, E}, skip_ws(L2)}.
 
 %%%
+parse_expr_binop(E1, [$+,$+|T]) ->
+	parse_expr_binop({unop, postinc, E1}, T);
+parse_expr_binop(E1, [$-,$-|T]) ->
+	parse_expr_binop({unop, postdec, E1}, T);
+parse_expr_binop(E1, L) ->
+	{L1, Mode} = case L of
+		[$+,$=|T] -> {T, assadd};
+		[$-,$=|T] -> {T, asssub};
+		[$*,$=|T] -> {T, assmul};
+		[$/,$=|T] -> {T, assquo};
+		[$%,$=|T] -> {T, assmod};
+		[$+|T] -> {T, add};
+		[$-|T] -> {T, sub};
+		[$*|T] -> {T, mul};
+		[$/|T] -> {T, quo};
+		[$%|T] -> {T, mod};
+		[$=,$=|T] -> {T, eq};
+		[$!,$=|T] -> {T, ne};
+		[$<,$=|T] -> {T, le};
+		[$>,$=|T] -> {T, ge};
+		[$<|T] -> {T, lt};
+		[$>|T] -> {T, gt};
+		[$=|T] -> {T, ass};
+		_ -> {L, none}
+	end,
+	case Mode of
+		none -> {E1, L1};	
+		_ -> 
+			{Ey, L2} = parse_expr(skip_ws(L1)),
+			{{binop_x, Mode, E1, Ey}, skip_ws(L2)}
+	end.
+
+%%%
 parse_expr(L) ->
 	{E, L1} = parse_expr_sing(skip_ws(L)),
 	L2 = skip_ws(L1),
-	{L3, Mode} = case L2 of
-		[$+,$=|T2] -> {T2, assadd};
-		[$-,$=|T2] -> {T2, asssub};
-		[$*,$=|T2] -> {T2, assmul};
-		[$/,$=|T2] -> {T2, assquo};
-		[$%,$=|T2] -> {T2, assmod};
-		[$+|T2] -> {T2, add};
-		[$-|T2] -> {T2, sub};
-		[$*|T2] -> {T2, mul};
-		[$/|T2] -> {T2, quo};
-		[$%|T2] -> {T2, mod};
-		[$=,$=|T2] -> {T2, eq};
-		[$!,$=|T2] -> {T2, ne};
-		[$<,$=|T2] -> {T2, le};
-		[$>,$=|T2] -> {T2, ge};
-		[$<|T2] -> {T2, lt};
-		[$>|T2] -> {T2, gt};
-		[$=|T2] -> {T2, ass};
-		_ -> {L2, none}
-	end,
-	case Mode of
-		none -> {E, L3};	
-		_ -> 
-			{Ey, L4} = parse_expr(skip_ws(L3)),
-			{{binop_x, Mode, E, Ey}, skip_ws(L4)}
-	end.
+	parse_expr_binop(E, L2).
 
 %%%
 parse_stat(L = [$}|_]) -> {term, L};
@@ -290,6 +304,8 @@ binop_to_str(assshr)  -> ">>=";
 binop_to_str(ass)  -> "=".
 
 %%%
+unop_to_str(preinc)  -> "++";
+unop_to_str(predec)  -> "--";
 unop_to_str(neg)  -> "-";
 unop_to_str(znot) -> "~";
 unop_to_str(lnot) -> "!";
@@ -302,6 +318,12 @@ print_code_tok({binop, Mode, E1, E2}) ->
 	io:format(" ~s ", [binop_to_str(Mode)]),
 	print_code_tok(E2),
 	io:format(")");
+print_code_tok({unop, postinc, E}) ->
+	print_code_tok(E),
+	io:format("++");
+print_code_tok({unop, postdec, E}) ->
+	print_code_tok(E),
+	io:format("--");
 print_code_tok({unop, Mode, E}) ->
 	io:format("~s", [unop_to_str(Mode)]),
 	print_code_tok(E);
@@ -435,10 +457,32 @@ run_op({binop, Mode, E1 = {nam, S}, E2}, State) ->
 		assmod -> run_binop_ass(Mode, S, V1, V2, S2);
 		_ -> {run_binop_val(Mode, V1, V2, S2), S2}
 	end;
+
 run_op({binop, Mode, E1, E2}, State) ->
 	{V1, S1} = run_op(E1, State),
 	{V2, S2} = run_op(E2, S1),
 	{run_binop_val(Mode, V1, V2, S2), S2};
+
+run_op({unop, Mode, {nam, S}}, State) ->
+	case Mode of
+		preinc ->
+			Vx = dict:fetch(S, State#state.vars) + 1,
+			S2 = State#state{vars = dict:store(S, Vx, State#state.vars)},
+			{Vx, S2};
+		predec ->
+			Vx = dict:fetch(S, State#state.vars) - 1,
+			S2 = State#state{vars = dict:store(S, Vx, State#state.vars)},
+			{Vx, S2};
+		postinc ->
+			Vx = dict:fetch(S, State#state.vars),
+			S2 = State#state{vars = dict:store(S, Vx + 1, State#state.vars)},
+			{Vx, S2};
+		postdec ->
+			Vx = dict:fetch(S, State#state.vars),
+			S2 = State#state{vars = dict:store(S, Vx - 1, State#state.vars)},
+			{Vx, S2};
+		_ -> run_op({unop, Mode, {int, dict:fetch(S, State#state.vars)}}, State)
+	end;
 run_op({unop, Mode, E}, State) ->
 	{V1, S1} = run_op(E, State),
 	VR = case Mode of
