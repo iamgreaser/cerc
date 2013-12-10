@@ -5,7 +5,6 @@
 -export([reduce_code/1,run_code/1]).
 -include("cerc.hrl").
 
-
 %%%
 bool_to_int(true) -> 1;
 bool_to_int(false) -> 0.
@@ -73,12 +72,12 @@ run_binop_ass(Mode, S, V1, V2, State) ->
 		assquo -> V1 / V2;
 		assmod -> V1 rem V2
 	end,
-	{VR, State#state{vars=dict:store(S, VR, State#state.vars)}}.
+	{VR, State#rstate{vars=dict:store(S, VR, State#rstate.vars)}}.
 
 %%%
 run_op({binop, ass, {nam, S}, E2}, State) ->
 	{V2, S2} = run_op(E2, State),
-	{V2, S2#state{vars=dict:store(S, V2, S2#state.vars)}};
+	{V2, S2#rstate{vars=dict:store(S, V2, S2#rstate.vars)}};
 	
 run_op({binop, Mode, E1 = {nam, S}, E2}, State) ->
 	{V1, S1} = run_op(E1, State),
@@ -100,22 +99,22 @@ run_op({binop, Mode, E1, E2}, State) ->
 run_op({unop, Mode, {nam, S}}, State) ->
 	case Mode of
 		preinc ->
-			Vx = dict:fetch(S, State#state.vars) + 1,
-			S2 = State#state{vars = dict:store(S, Vx, State#state.vars)},
+			Vx = dict:fetch(S, State#rstate.vars) + 1,
+			S2 = State#rstate{vars = dict:store(S, Vx, State#rstate.vars)},
 			{Vx, S2};
 		predec ->
-			Vx = dict:fetch(S, State#state.vars) - 1,
-			S2 = State#state{vars = dict:store(S, Vx, State#state.vars)},
+			Vx = dict:fetch(S, State#rstate.vars) - 1,
+			S2 = State#rstate{vars = dict:store(S, Vx, State#rstate.vars)},
 			{Vx, S2};
 		postinc ->
-			Vx = dict:fetch(S, State#state.vars),
-			S2 = State#state{vars = dict:store(S, Vx + 1, State#state.vars)},
+			Vx = dict:fetch(S, State#rstate.vars),
+			S2 = State#rstate{vars = dict:store(S, Vx + 1, State#rstate.vars)},
 			{Vx, S2};
 		postdec ->
-			Vx = dict:fetch(S, State#state.vars),
-			S2 = State#state{vars = dict:store(S, Vx - 1, State#state.vars)},
+			Vx = dict:fetch(S, State#rstate.vars),
+			S2 = State#rstate{vars = dict:store(S, Vx - 1, State#rstate.vars)},
 			{Vx, S2};
-		_ -> run_op({unop, Mode, {int, dict:fetch(S, State#state.vars)}}, State)
+		_ -> run_op({unop, Mode, {int, dict:fetch(S, State#rstate.vars)}}, State)
 	end;
 run_op({unop, Mode, E}, State) ->
 	{V1, S1} = run_op(E, State),
@@ -125,7 +124,7 @@ run_op({unop, Mode, E}, State) ->
 	end,
 	{VR, S1};
 run_op({nam, S}, State) -> 
-	{dict:fetch(S, State#state.vars), State};
+	{dict:fetch(S, State#rstate.vars), State};
 run_op({int, N}, State) -> {N, State}.
 
 %%%
@@ -182,5 +181,5 @@ run_code({op, E, T}, State) ->
 	run_code(T, S1).
 
 run_code(Code) ->
-	run_code(Code, #state{vars=dict:new()}).
+	run_code(Code, #rstate{vars=dict:new()}).
 

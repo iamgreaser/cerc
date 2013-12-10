@@ -16,5 +16,14 @@ main([FName]) ->
 	Code2 = cerc_run:reduce_code(Code),
 	cerc_print:print_code(Code2),
 	{Result, _RState} = cerc_run:run_code(Code2),
-	io:format("~p~n", [Result]).
+	io:format("~p~n", [Result]);
+main([FName, FOutName]) ->
+	{ok, CBin} = file:read_file(FName),
+	CList = binary:bin_to_list(CBin),
+	Code = cerc_parse:parse_code(CList),
+	cerc_print:print_code(Code),
+	Code2 = cerc_run:reduce_code(Code),
+	cerc_print:print_code(Code2),
+	Result = cerc_cmp:build_code(i8086, Code2),
+	ok = file:write_file(FOutName, Result).
 
