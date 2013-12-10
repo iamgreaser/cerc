@@ -2,8 +2,25 @@
 % 2013, Ben "GreaseMonkey" Russell -- Public Domain
 
 -module(cerc_cmp).
--export([build_code/2, em8/2, em16le/2]).
+-export([build_code/2, em8/2, em16le/2, heap_var/2]).
 -include("cerc.hrl").
+
+%%%
+heap_var_noalloc(S, S0) ->
+	{dict:fetch(S, S0#cstate.heapname), S0}.
+
+heap_var(S, S0) ->
+	case dict:is_key(S, S0#cstate.heapname) of
+		true -> heap_var_noalloc(S, S0);
+		false ->
+			SHeap = dict:store(S,
+				S0#cstate.heappos,
+				S0#cstate.heapname),
+			S1 = S0#cstate{
+				heappos = S0#cstate.heappos + 2,
+				heapname = SHeap},
+			{S0#cstate.heappos, S1}
+	end.
 
 %%%
 em8(S0, Byte) when Byte >= 16#00 andalso Byte =< 16#FF ->
@@ -16,8 +33,9 @@ em16le(S0, Word) ->
 %%%
 fix_code(S0, [{imm16le, P, Name} | T], RealPC) ->
 	S1 = S0#cstate{pc = P},
-	S2 = em16le(S1, dict:fetch(Name, S0#cstate.heapname) + S0#cstate.heapstart),
-	fix_code(S2, T, RealPC);
+	{Var, S2} = heap_var(Name, S1),
+	S3 = em16le(S2, Var + S2#cstate.heapstart),
+	fix_code(S3, T, RealPC);
 fix_code(S0, [], RealPC) ->
 	S0#cstate{pc = RealPC}.
 
@@ -48,6 +66,7 @@ build_code(i8086, Code, State) ->
 
 build_code(Arch, Code) ->
 	S0 = build_code(Arch, Code, build_cstate(Arch)),
-	S1 = fix_code(S0),
-	spew_code(S1#cstate.pcstart, S1#cstate.pc, S1#cstate.mem, <<>>).
+	S1 = S0#cstate{heapstart = S0#cstate.pc},
+	S2 = fix_code(S1),
+	spew_code(S2#cstate.pcstart, S2#cstate.pc, S2#cstate.mem, <<>>).
 
