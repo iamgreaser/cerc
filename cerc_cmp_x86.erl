@@ -70,6 +70,14 @@
 	X == shr orelse
 	X == sar)).
 
+-define(is_grp3(X), (
+	X == znot orelse
+	X == neg  orelse
+	X == mul  orelse
+	X == imul orelse
+	X == zdiv orelse
+	X == idiv)).
+
 -define(is_grp5(X), (
 	X == inc   orelse
 	X == dec   orelse
@@ -133,6 +141,14 @@ grp2(rcr) -> 3;
 grp2(shl) -> 4;
 grp2(shr) -> 5;
 grp2(sar) -> 7.
+
+%%%
+grp3(znot) -> 2;
+grp3(neg)  -> 3;
+grp3(mul)  -> 4;
+grp3(imul) -> 5;
+grp3(zdiv) -> 6;
+grp3(idiv) -> 7.
 
 %%%
 grp5(inc)   -> 0;
@@ -294,6 +310,14 @@ emit(S0, Mode, [X1, cl]) when ?is_grp2(Mode) ->
 	S1 = em8(S0, 16#D3),
 	emit_modrm(S1, grp2(Mode), X1);
 
+% grp3 (aside from TEST)
+emit(S0, Mode, [R1]) when ?is_grp3(Mode) and ?is_reg8(R1) ->
+	S1 = em8(S0, 16#F6),
+	emit_modrm(S1, grp3(Mode), R1);
+emit(S0, Mode, [X1]) when ?is_grp3(Mode) ->
+	S1 = em8(S0, 16#F7),
+	emit_modrm(S1, grp3(Mode), X1);
+
 %
 emit(S0, jmp, [I1]) when is_number(I1) ->
 	S1 = em8(S0, 16#E9),
@@ -349,38 +373,48 @@ heap_set_fix(S, S0) ->
 %%%
 build_op(I={nam, S}, S0) ->
 	emit(S0, mov, [ax, {memw, I}]);
-build_op({binop, Mode, N1={nam, S}, E2}, S0) when ?is_ass(Mode) ->
+build_op({binop, ass, N1={nam, S}, E2}, S0) ->
 	S1 = build_op(E2, S0),
-	case Mode of
-		ass -> emit(S1, mov, [{memw, N1}, ax]);
-		assadd -> emit(S1, add, [{memw, N1}, ax]);
-		asssub -> emit(S1, sub, [{memw, N1}, ax]);
-			% the rest are kinda tricky.
-		assmul -> emit_chain(S1, [
-			{zxor, [dx, dx]},
-			{imul, [{memw, N1}]},
-			{mov, [{memw, N1}, ax]}]);
-		assquo -> emit_chain(S1, [
-			{zxor, [dx, dx]},
-			{idiv, [{memw, N1}]},
-			{mov, [{memw, N1}, ax]}]);
-		assmod -> emit_chain(S1, [
-			{zxor, [dx, dx]},
-			{idiv, [{memw, N1}]},
-			{mov, [ax, dx]},
-			{mov, [{memw, N1}, ax]}]);
-		assshl -> emit_chain(S1, [
-			{mov, [cx, ax]},
-			{shl, [{memw, N1}, cl]},
-			{mov, [ax, {memw, N1}]}]);
-		assshr -> emit_chain(S1, [
-			{mov, [cx, ax]},
-			{shl, [{memw, N1}, cl]},
-			{mov, [ax, {memw, N1}]}])
-	end;
+	emit(S1, mov, [{memw, N1}, ax]);
+build_op({binop, Mode, N1={nam, S}, E2}, S0) when ?is_ass(Mode) ->
+	BinMode = case Mode of
+		assadd -> add;
+		asssub -> sub;
+		assmul -> mul;
+		assquo -> quo;
+		assmod -> mod;
+		assshl -> shl;
+		assshr -> shr
+	end,
+	S1 = build_op({binop, BinMode, {nam, S}, E2}, S0),
+	emit(S1, mov, [{memw, N1}, ax]);
 build_op(dummy, S0) -> S0;
 build_op({int, N}, S0) ->
 	emit(S0, mov, [ax, N]);
+build_op({binop, Mode, E1, E2}, S0) ->
+	S1 = build_op(E1, S0),
+	S2 = emit(S1, push, [ax]),
+	S3 = build_op(E2, S2),
+	S4 = emit_chain(S3, [
+		{mov, [cx, ax]},
+		{pop, [ax]}]),
+	case Mode of
+		add -> emit(S4, add, [ax, cx]);
+		sub -> emit(S4, sub, [ax, cx]);
+		mul -> emit_chain(S4, [
+			{zxor, [dx, dx]},
+			{imul, [cx]}]);
+		quo -> emit_chain(S4, [
+			{zxor, [dx, dx]},
+			{idiv, [cx]}]);
+		mod -> emit_chain(S4, [
+			{zxor, [dx, dx]},
+			{idiv, [cx]},
+			{mov, [ax, dx]}]);
+		shl -> emit(S4, shl, [ax, cl]);
+		shr -> emit(S4, shr, [ax, cl])
+	end;
+
 build_op({unop, Mode, I={nam, S}}, S0) ->
 	case Mode of
 		preinc -> emit_chain(S0, [
