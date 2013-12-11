@@ -2,7 +2,8 @@
 % 2013, Ben "GreaseMonkey" Russell -- Public Domain
 
 -module(cerc_cmp).
--export([build_code/2, em8/2, em16le/2, heap_var/2]).
+-export([build_code/2, em8/2, em16le/2]).
+-export([heap_set_fix/2, heap_var/2, add_fix/2]).
 -include("cerc.hrl").
 
 %%%
@@ -23,12 +24,21 @@ heap_var(S, S0) ->
 	end.
 
 %%%
+heap_set_fix(S, S0) ->
+	add_fix({imm16le, S0#cstate.pc, S}, S0).
+
+%%%
 em8(S0, Byte) when Byte >= 16#00 andalso Byte =< 16#FF ->
 	S0#cstate{mem = array:set(S0#cstate.pc, Byte, S0#cstate.mem),
 		pc = S0#cstate.pc + 1}.
 em16le(S0, Word) ->
 	S1 = em8(S0, Word band 16#FF),
 	em8(S1, Word bsr 8).
+
+%%%
+add_fix(Fix, S0) ->
+	S0#cstate {
+		heapfix = [Fix | S0#cstate.heapfix]}.
 
 %%%
 fix_code(S0, [{imm16le, P, Imm} | T], RealPC) when is_number(Imm) ->
@@ -46,6 +56,7 @@ fix_code(S0, [], RealPC) ->
 fix_code(S0) ->
 	fix_code(S0, S0#cstate.heapfix, S0#cstate.pc).
 
+%%%
 spew_code(PC, PC, _Mem, Acc) ->
 	Acc;
 spew_code(PC, PCEnd, Mem, Acc) when PC < PCEnd ->
