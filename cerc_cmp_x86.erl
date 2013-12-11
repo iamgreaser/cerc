@@ -126,6 +126,15 @@ grp1(zxor) -> 6;
 grp1(cmp) ->  7.
 
 %%%
+grp2(rol) -> 0;
+grp2(ror) -> 1;
+grp2(rcl) -> 2;
+grp2(rcr) -> 3;
+grp2(shl) -> 4;
+grp2(shr) -> 5;
+grp2(sar) -> 7.
+
+%%%
 grp5(inc)   -> 0;
 grp5(dec)   -> 1;
 grp5(zcall) -> 2;
@@ -248,6 +257,10 @@ emit(S0, Mode, [ax, I2]) when ?is_grp1(Mode) andalso is_number(I2) ->
 emit(S0, Mode, [al, I2]) when ?is_grp1(Mode) andalso is_number(I2) ->
 	S1 = em8(S0, 16#04 + (grp1(Mode) bsl 3)),
 	em8(S1, I2);
+emit(S0, Mode, [R1, I2]) when ?is_grp1(Mode) andalso ?is_reg8(R1) andalso is_number(I2) ->
+	S1 = em8(S0, 16#80),
+	S2 = emit_modrm(S1, grp1(Mode), R1),
+	em8(S2, I2);
 emit(S0, Mode, [X1, I2]) when ?is_grp1(Mode) andalso is_number(I2) ->
 	% TODO: enforce 8/16-bit X1
 	S1 = em8(S0, 16#81),
@@ -265,6 +278,21 @@ emit(S0, Mode, [R1, X2]) when ?is_grp1(Mode) andalso ?is_reg16(R1) ->
 emit(S0, Mode, [R1, X2]) when ?is_grp1(Mode) andalso ?is_reg8(R1) ->
 	S1 = em8(S0, 16#02 + (grp1(Mode) bsl 3)),
 	emit_modrm(S1, R1, X2);
+
+% grp2
+% TODO: determine "bitness" (assuming 16-bit for now)
+emit(S0, Mode, [R1, 1]) when ?is_grp2(Mode) and ?is_reg8(R1) ->
+	S1 = em8(S0, 16#D0),
+	emit_modrm(S1, grp2(Mode), R1);
+emit(S0, Mode, [R1, cl]) when ?is_grp2(Mode) and ?is_reg8(R1) ->
+	S1 = em8(S0, 16#D2),
+	emit_modrm(S1, grp2(Mode), R1);
+emit(S0, Mode, [X1, 1]) when ?is_grp2(Mode) ->
+	S1 = em8(S0, 16#D1),
+	emit_modrm(S1, grp2(Mode), X1);
+emit(S0, Mode, [X1, cl]) when ?is_grp2(Mode) ->
+	S1 = em8(S0, 16#D3),
+	emit_modrm(S1, grp2(Mode), X1);
 
 %
 emit(S0, jmp, [I1]) when is_number(I1) ->
@@ -292,6 +320,7 @@ emit(S0, Mode, [X1]) when ?is_grp5(Mode) ->
 	emit_modrm(S1, grp5(Mode), X1);
 
 %
+emit(S0, daa, []) -> em8(S0, 16#27);
 emit(S0, sahf, []) -> em8(S0, 16#9E);
 emit(S0, lahf, []) -> em8(S0, 16#9F);
 
@@ -444,8 +473,35 @@ build({op, E, T}, S0) ->
 %%%
 build_result(S0) ->
 	% TODO!
-	emit_chain(S0, [
-		]).
+	S1 = emit_chain(S0, [
+		{mov, [bx, ax]},
+
+		{mov, [al, bh]},
+		{mov, [cl, 4]},
+		{shr, [al, cl]},
+		{sub, [ah, ah]}, {daa, []}, {add, [al, 16#F0]}, {adc, [al, 16#40]},
+		{mov, [ah, 16#02]}, {mov, [dl, al]}, {int, [16#21]},
+
+		{mov, [al, bh]},
+		{zand, [al, 16#0F]},
+		{sub, [ah, ah]}, {daa, []}, {add, [al, 16#F0]}, {adc, [al, 16#40]},
+		{mov, [ah, 16#02]}, {mov, [dl, al]}, {int, [16#21]},
+
+		{mov, [al, bl]},
+		{mov, [cl, 4]},
+		{shr, [al, cl]},
+		{sub, [ah, ah]}, {daa, []}, {add, [al, 16#F0]}, {adc, [al, 16#40]},
+		{mov, [ah, 16#02]}, {mov, [dl, al]}, {int, [16#21]},
+
+		{mov, [al, bl]},
+		{zand, [al, 16#0F]},
+		{sub, [ah, ah]}, {daa, []}, {add, [al, 16#F0]}, {adc, [al, 16#40]},
+		{mov, [ah, 16#02]}, {mov, [dl, al]}, {int, [16#21]},
+
+		{mov, [dl, 16#0D]},
+		{int, [16#21]},
+		{mov, [dl, 16#0A]},
+		{int, [16#21]}]).
 
 %%%
 build_code(Code, S0) ->
