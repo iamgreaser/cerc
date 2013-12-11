@@ -31,6 +31,10 @@ em16le(S0, Word) ->
 	em8(S1, Word bsr 8).
 
 %%%
+fix_code(S0, [{imm16le, P, Imm} | T], RealPC) when is_number(Imm) ->
+	S1 = S0#cstate{pc = P},
+	S2 = em16le(S1, Imm),
+	fix_code(S2, T, RealPC);
 fix_code(S0, [{imm16le, P, Name} | T], RealPC) ->
 	S1 = S0#cstate{pc = P},
 	{Var, S2} = heap_var(Name, S1),
